@@ -60,8 +60,10 @@
 #include <livox_ros_driver2/CustomMsg.h>
 #include "preprocess.h"
 #include "ikdtree_public.hpp"
-#include <reloc/reloc.h>
+#include <reloc.h>
 #include <atomic>
+#include "posebuffer.h"
+#include <thread>
 
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
@@ -375,6 +377,7 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
     sig_buffer.notify_all();
 }
 
+/*** relocation callback ***/
 void reloc_cbk(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msg_in) 
 {
     double timestamp = msg_in->header.stamp.toSec();
@@ -606,6 +609,29 @@ void publish_map(const ros::Publisher & pubLaserCloudMap)
     laserCloudMap.header.frame_id = "camera_init";
     pubLaserCloudMap.publish(laserCloudMap);
 }
+
+void publish_imupose(PoseBuffer& pbuffer, const ros::Publisher& pubImuPose)
+{
+    ros::Rate rate(200);
+    while(ros::ok()) 
+    {
+        Pose pose = pbuffer.Pop();
+        geometry_msgs::PoseStamped msg;
+        msg.header.stamp = ros::Time(pose._timestamp);
+        msg.header.frame_id = "camera_init";
+        msg.pose.position.x = pose._x;
+        msg.pose.position.y = pose._y;
+        msg.pose.position.z = pose._z;
+        msg.pose.orientation.x = pose._qx;
+        msg.pose.orientation.y = pose._qy;
+        msg.pose.orientation.z = pose._qz;
+        msg.pose.orientation.w = pose._qw;
+        pubImuPose.publish(msg);
+
+        rate.sleep();
+    }
+}
+
 
 template<typename T>
 void set_posestamp(T & out)
@@ -899,6 +925,13 @@ int main(int argc, char** argv)
             ("/Odometry", 100000);
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path> 
             ("/path", 100000);
+    ros::Publisher pubImuPose       = nh.advertise<geometry_msgs::PoseStamped> ("/imu_pose", 100000);
+
+    std::thread th([&](){
+        publish_imupose(p_imu->pbuffer, pubImuPose);
+    });
+    th.detach();
+
 //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
     ros::Rate rate(5000);
