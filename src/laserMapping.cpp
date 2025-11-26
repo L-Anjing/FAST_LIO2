@@ -640,7 +640,7 @@ void publish_odometryhighfreq(PoseBuffer& pbuffer, const ros::Publisher& pubOdom
         q.setY(msg.pose.pose.orientation.y);
         q.setZ(msg.pose.pose.orientation.z);
         transform.setRotation(q);
-        br_hf.sendTransform(tf::StampedTransform(transform, msg.header.stamp, "odom_hf", "body"));
+        br_hf.sendTransform(tf::StampedTransform(transform, msg.header.stamp, "camera_init", "body_hf"));
 
         rate.sleep();
     }
