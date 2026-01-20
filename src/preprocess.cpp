@@ -41,13 +41,13 @@ void Preprocess::set(bool feat_en, int lid_type, double bld, int pfilt_num)
   point_filter_num = pfilt_num;
 }
 
-void Preprocess::process(const livox_ros_driver2::CustomMsg::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
+void Preprocess::process(const LivoxCustomMsgConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
 {  
   avia_handler(msg);
   *pcl_out = pl_surf;
 }
 
-void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
+void Preprocess::process(const Pcl2MsgConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
 {
   switch (time_unit)
   {
@@ -89,7 +89,7 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   *pcl_out = pl_surf;
 }
 
-void Preprocess::avia_handler(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
+void Preprocess::avia_handler(const LivoxCustomMsgConstPtr &msg)
 {
   pl_surf.clear();
   pl_corn.clear();
@@ -186,7 +186,7 @@ void Preprocess::avia_handler(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
   }
 }
 
-void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+void Preprocess::oust64_handler(const Pcl2MsgConstPtr &msg)
 {
   pl_surf.clear();
   pl_corn.clear();
@@ -252,7 +252,11 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   }
   else
   {
+    #ifdef USE_ROS1
     double time_stamp = msg->header.stamp.toSec();
+    #elif defined(USE_ROS2)
+    double time_stamp = rclcpp::Time(msg->header.stamp).seconds();
+    #endif
     // cout << "===================================" << endl;
     // printf("Pt size = %d, N_SCANS = %d\r\n", plsize, N_SCANS);
     for (int i = 0; i < pl_orig.points.size(); i++)
@@ -281,7 +285,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   // pub_func(pl_surf, pub_corn, msg->header.stamp);
 }
 
-void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+void Preprocess::velodyne_handler(const Pcl2MsgConstPtr &msg)
 {
     pl_surf.clear();
     pl_corn.clear();
@@ -455,7 +459,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
 }
 
-void Preprocess::sim_handler(const sensor_msgs::PointCloud2::ConstPtr &msg) {
+void Preprocess::sim_handler(const Pcl2MsgConstPtr &msg) {
     pl_surf.clear();
     pl_full.clear();
     pcl::PointCloud<pcl::PointXYZI> pl_orig;
@@ -794,10 +798,10 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   }
 }
 
-void Preprocess::pub_func(PointCloudXYZI &pl, const ros::Time &ct)
+void Preprocess::pub_func(PointCloudXYZI &pl, const TimeType &ct)
 {
   pl.height = 1; pl.width = pl.size();
-  sensor_msgs::PointCloud2 output;
+  PointCloud2Msg output;
   pcl::toROSMsg(pl, output);
   output.header.frame_id = "livox";
   output.header.stamp = ct;

@@ -1,11 +1,30 @@
 #ifndef PREPROCESS_H
 #define PREPROCESS_H
 
-
-#include <ros/ros.h>
 #include <pcl_conversions/pcl_conversions.h>
+
+#ifdef USE_ROS1
+#include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <livox_ros_driver2/CustomMsg.h>
+#elif defined(USE_ROS2)
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <livox_ros_driver2/msg/custom_msg.hpp>
+#endif
+
+
+#ifdef USE_ROS1
+using LivoxCustomMsgConstPtr = livox_ros_driver2::CustomMsg::ConstPtr;
+using Pcl2MsgConstPtr = sensor_msgs::PointCloud2::ConstPtr;
+using TimeType = ros::Time;
+using PointCloud2Msg = sensor_msgs::PointCloud2;
+#elif defined(USE_ROS2)
+using LivoxCustomMsgConstPtr = livox_ros_driver2::msg::CustomMsg::ConstPtr;
+using Pcl2MsgConstPtr = sensor_msgs::msg::PointCloud2::ConstPtr;
+using TimeType = rclcpp::Time;
+using PointCloud2Msg = sensor_msgs::msg::PointCloud2;
+#endif
 
 using namespace std;
 
@@ -91,8 +110,8 @@ class Preprocess
   Preprocess();
   ~Preprocess();
   
-  void process(const livox_ros_driver2::CustomMsg::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out);
-  void process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out);
+  void process(const LivoxCustomMsgConstPtr &msg, PointCloudXYZI::Ptr &pcl_out);
+  void process(const Pcl2MsgConstPtr &msg, PointCloudXYZI::Ptr &pcl_out);
   void set(bool feat_en, int lid_type, double bld, int pfilt_num);
 
   // sensor_msgs::PointCloud2::ConstPtr pointcloud;
@@ -103,16 +122,22 @@ class Preprocess
   int lidar_type, point_filter_num, N_SCANS, SCAN_RATE, time_unit;
   double blind;
   bool feature_enabled, given_offset_time;
-  ros::Publisher pub_full, pub_surf, pub_corn;
+  #ifdef USE_ROS1
+    ros::Publisher pub_full, pub_surf, pub_corn;
+  #elif defined(USE_ROS2)
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_full;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_surf;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_corn;
+  #endif  
     
 
   private:
-  void avia_handler(const livox_ros_driver2::CustomMsg::ConstPtr &msg);
-  void oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
-  void velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
-  void sim_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
+  void avia_handler(const LivoxCustomMsgConstPtr &msg);
+  void oust64_handler(const Pcl2MsgConstPtr &msg);
+  void velodyne_handler(const Pcl2MsgConstPtr &msg);
+  void sim_handler(const Pcl2MsgConstPtr &msg);
   void give_feature(PointCloudXYZI &pl, vector<orgtype> &types);
-  void pub_func(PointCloudXYZI &pl, const ros::Time &ct);
+  void pub_func(PointCloudXYZI &pl, const TimeType &ct);
   int  plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i, uint &i_nex, Eigen::Vector3d &curr_direct);
   bool small_plane(const PointCloudXYZI &pl, vector<orgtype> &types, uint i_cur, uint &i_nex, Eigen::Vector3d &curr_direct);
   bool edge_jump_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i, Surround nor_dir);

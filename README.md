@@ -1,3 +1,49 @@
+## Modifeid and Adapted Version of FAST-LIO
+
+### ROS2 Adaption
+
+**Build:**
+
+```bash
+mkdir fastlio_ws
+cd fastlio_ws
+
+mkdir src && cd src
+git clone https://github.com/RightTr/FAST_LIO.git
+
+cd src/FAST-LIO
+
+./build.sh humble
+```
+
+**Directly Run:**
+
+```bash
+cd fastlio_ws 
+
+source install/setup.bash
+
+ros2 launch fast_lio mapping_mid360.launch.py
+```
+
+### Relocalization Mode
+
+This version supports relocalization using manually set odometry poses. Once odometry poses are published to the */reloc_topic*, the system will reset the IKF and the current pose according to your input.
+
+**Run Relocalization Mode:**
+
+```bash
+# ROS1
+cd fastlio_ws 
+source devel/setup.bash
+roslaunch fast_lio reloc_mid360.launch
+
+# ROS2
+cd fastlio_ws 
+source install/setup.bash
+ros2 launch fast_lio reloc_mid360.launch.py
+```
+
 ## Related Works and Extended Application
 
 **SLAM:**
