@@ -91,12 +91,12 @@ using Pcl2Msg = sensor_msgs::PointCloud2;
 using PathMsg = nav_msgs::Path;
 using QuaternionMsg = geometry_msgs::Quaternion;
 using PoseStampedMsg = geometry_msgs::PoseStamped;
+using PoseStampedMsgConstPtr = geometry_msgs::PoseStamped::ConstPtr;
 using ImuMsgConstPtr = sensor_msgs::Imu::ConstPtr;
 using ImuMsgPtr = sensor_msgs::Imu::Ptr;
 using LivoxCustomMsgConstPtr = livox_ros_driver2::CustomMsg::ConstPtr;
 using LivoxCustomMsg = livox_ros_driver2::CustomMsg;
 using Pcl2MsgConstPtr = sensor_msgs::PointCloud2::ConstPtr;
-using PoseWithCovarianceStampedMsgConstPtr = geometry_msgs::PoseWithCovarianceStamped::ConstPtr;
 using ImuMsg = sensor_msgs::Imu;
 #elif defined(USE_ROS2)
 using PathPublisher = rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr;
@@ -109,12 +109,12 @@ using Pcl2Msg = sensor_msgs::msg::PointCloud2;
 using PathMsg = nav_msgs::msg::Path;
 using QuaternionMsg = geometry_msgs::msg::Quaternion;
 using PoseStampedMsg = geometry_msgs::msg::PoseStamped;
+using PoseStampedMsgConstPtr = geometry_msgs::msg::PoseStamped::ConstPtr;
 using ImuMsgConstPtr = sensor_msgs::msg::Imu::ConstPtr;
 using ImuMsgPtr = sensor_msgs::msg::Imu::Ptr;
 using LivoxCustomMsgConstPtr = livox_ros_driver2::msg::CustomMsg::ConstPtr;
 using LivoxCustomMsg = livox_ros_driver2::msg::CustomMsg;
 using Pcl2MsgConstPtr = sensor_msgs::msg::PointCloud2::ConstPtr;
-using PoseWithCovarianceStampedMsgConstPtr = geometry_msgs::msg::PoseWithCovarianceStamped::ConstPtr;
 using ImuMsg = sensor_msgs::msg::Imu;
 #endif
 
@@ -472,28 +472,26 @@ void imu_cbk(const ImuMsgConstPtr &msg_in)
 }
 
 /*** relocation callback ***/
-void reloc_cbk(const PoseWithCovarianceStampedMsgConstPtr &msg_in) 
+void reloc_cbk(const PoseStampedMsgConstPtr &msg_in) 
 {
     #ifdef USE_ROS1
         double timestamp = msg_in->header.stamp.toSec();
     #elif defined(USE_ROS2)
         double timestamp = msg_in->header.stamp.sec + msg_in->header.stamp.nanosec * 1e-9;
     #endif
-    double x = msg_in->pose.pose.position.x;
-    double y = msg_in->pose.pose.position.y;
-    double z = msg_in->pose.pose.position.z;
+    double x = msg_in->pose.position.x;
+    double y = msg_in->pose.position.y;
+    double z = msg_in->pose.position.z;
 
-    double qx = msg_in->pose.pose.orientation.x;
-    double qy = msg_in->pose.pose.orientation.y;
-    double qz = msg_in->pose.pose.orientation.z;
-    double qw = msg_in->pose.pose.orientation.w;
+    double qx = msg_in->pose.orientation.x;
+    double qy = msg_in->pose.orientation.y;
+    double qz = msg_in->pose.orientation.z;
+    double qw = msg_in->pose.orientation.w;
     
+    std::lock_guard<std::mutex> lock(mtx_reloc);
     reloc_state = RelocState(x, y, z,
                     qx, qy, qz, qw, timestamp);
-
-    mtx_reloc.unlock();
     relocalize_flag.store(true); 
-    
     #ifdef USE_ROS1
         ROS_INFO("Reloc received: (%.3f, %.3f, %.3f), quat=(%.3f, %.3f, %.3f, %.3f)",
             x, y, z, qx, qy, qz, qw);
@@ -707,7 +705,7 @@ void publish_frame_body(const Pcl2Publisher & pubLaserCloudFull_body)
         laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);   
     #elif defined(USE_ROS2)
         laserCloudmsg.header.stamp =
-            rclcpp::Time(static_cast<uint64_t>(lidar_end_time * 1e9));
+            convert_to_rclcpp_time(lidar_end_time);
     #endif
     laserCloudmsg.header.frame_id = "body";
     #ifdef USE_ROS1
@@ -733,7 +731,7 @@ void publish_effect_world(const Pcl2Publisher & pubLaserCloudEffect)
         laserCloudFullRes3.header.stamp = ros::Time().fromSec(lidar_end_time);
     #elif defined(USE_ROS2)
         laserCloudFullRes3.header.stamp =
-            rclcpp::Time(static_cast<uint64_t>(lidar_end_time * 1e9));
+            convert_to_rclcpp_time(lidar_end_time);
     #endif  
     laserCloudFullRes3.header.frame_id = "camera_init";
     #ifdef USE_ROS1
@@ -750,7 +748,7 @@ void publish_map(const Pcl2Publisher & pubLaserCloudMap)
     #ifdef USE_ROS1
         laserCloudMap.header.stamp = ros::Time().fromSec(lidar_end_time);
     #elif defined(USE_ROS2)
-        laserCloudMap.header.stamp = rclcpp::Time(static_cast<uint64_t>(lidar_end_time * 1e9));
+        laserCloudMap.header.stamp = convert_to_rclcpp_time(lidar_end_time);
     #endif
     laserCloudMap.header.frame_id = "camera_init";
     #ifdef USE_ROS1
@@ -898,7 +896,7 @@ void publish_odometry(const rclcpp::Node::SharedPtr node_, const OdomPublisher &
     odomAftMapped.child_frame_id = "body";
     set_posestamp(odomAftMapped.pose);
     odomAftMapped.header.stamp =
-        rclcpp::Time(static_cast<uint64_t>(lidar_end_time * 1e9));
+        convert_to_rclcpp_time(lidar_end_time);
     pubOdomAftMapped->publish(odomAftMapped);
 
     auto P = kf.get_P();
@@ -1244,7 +1242,7 @@ int main(int argc, char** argv)
         } else {
             sub_pcl = node->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, 200000, standard_pcl_cbk);
         }
-        auto sub_reloc = node->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(reloc_topic, 10, reloc_cbk);
+        auto sub_reloc = node->create_subscription<geometry_msgs::msg::PoseStamped>(reloc_topic, 10, reloc_cbk);
 
         auto sub_imu = node->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 200000, imu_cbk);
         auto pubLaserCloudFull = node->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 
@@ -1302,9 +1300,8 @@ int main(int argc, char** argv)
                 feats_down_world->clear();
                 p_imu->Reset();
                 state_ikfom state_point_reloc;
-
-                std::lock_guard<std::mutex> lock(mtx_reloc);
                 {
+                    std::lock_guard<std::mutex> lock(mtx_reloc);
                     #ifdef USE_ROS1
                         ROS_INFO("...... Start Relocalization ......");
                     #elif defined(USE_ROS2)
@@ -1314,6 +1311,7 @@ int main(int argc, char** argv)
                     state_point_reloc.rot = Eigen::Quaterniond(reloc_state.qw_, reloc_state.qx_,
                                                 reloc_state.qy_, reloc_state.qz_);
                 }        
+                state_point_reloc.rot.normalize();
                 kf.reset(state_point_reloc);
                 ikdtree.delete_tree_nodes(&ikdtree.Root_Node);
                 ikdtree.Root_Node = nullptr;

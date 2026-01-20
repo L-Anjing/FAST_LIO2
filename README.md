@@ -10,8 +10,10 @@ cd fastlio_ws
 
 mkdir src && cd src
 git clone https://github.com/RightTr/FAST_LIO.git
+git clone https://github.com/RightTr/fast_lio_interfaces.git
 
 cd src/FAST-LIO
+git submodule update --init --recursive
 
 ./build.sh humble
 ```
@@ -23,26 +25,38 @@ cd fastlio_ws
 
 source install/setup.bash
 
+# e.g.
 ros2 launch fast_lio mapping_mid360.launch.py
 ```
 
 ### Relocalization Mode
 
-This version supports relocalization using manually set odometry poses. Once odometry poses are published to the */reloc_topic*, the system will reset the IKF and the current pose according to your input.
+This version supports relocalization using manually set odometry poses. Once odometry poses are published to the */reloc_topic* (according to the following .yaml file), the system will reset the IKF and the current pose according to your input.
 
 **Run Relocalization Mode:**
 
 ```bash
+# e.g.
 # ROS1
 cd fastlio_ws 
 source devel/setup.bash
 roslaunch fast_lio reloc_mid360.launch
+# Publish geometry_msgs::PoseStamped to the /reloc_topic
 
 # ROS2
 cd fastlio_ws 
 source install/setup.bash
 ros2 launch fast_lio reloc_mid360.launch.py
+# Publish geometry_msgs::msg::PoseStamped to the /reloc_topic
 ```
+
+**High Frequency Odometry based on IMU Propagation:**
+
+Subscribe the topic named /OdometryHighFreq to receive high frequency odometry output based on IMU Propagation.
+
+## TODO List
+
+* Robosense Airy LiDAR Support
 
 ## Related Works and Extended Application
 
