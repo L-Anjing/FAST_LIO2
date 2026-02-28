@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(fast_lio)
 
 SET(CMAKE_BUILD_TYPE "Debug")
+set(livox_ros_driver2_DIR /home/li/third-pkg/livox/devel/share/livox_ros_driver2/cmake)
 
 ADD_COMPILE_OPTIONS(-std=c++14 )
 ADD_COMPILE_OPTIONS(-std=c++14 )

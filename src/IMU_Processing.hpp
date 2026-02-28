@@ -70,22 +70,22 @@ class ImuProcess
   void IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, int &N);
   void UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, PointCloudXYZI &pcl_in_out);
 
-  PointCloudXYZI::Ptr cur_pcl_un_;
+  PointCloudXYZI::Ptr cur_pcl_un_;//undistorted point cloud
   sensor_msgs::ImuConstPtr last_imu_;
-  deque<sensor_msgs::ImuConstPtr> v_imu_;
+  deque<sensor_msgs::ImuConstPtr> v_imu_;//IMU queue data buffer
   vector<Pose6D> IMUpose;
   vector<M3D>    v_rot_pcl_;
-  M3D Lidar_R_wrt_IMU;
-  V3D Lidar_T_wrt_IMU;
+  M3D Lidar_R_wrt_IMU; //lidar frame rotation with respect to IMU frame
+  V3D Lidar_T_wrt_IMU; //lidar frame translation with respect to IMU frame
   V3D mean_acc;
   V3D mean_gyr;
   V3D angvel_last;
   V3D acc_s_last;
-  double start_timestamp_;
+  double start_timestamp_;//the timestamp of the initialization
   double last_lidar_end_time_;
   int    init_iter_num = 1;
-  bool   b_first_frame_ = true;
-  bool   imu_need_init_ = true;
+  bool   b_first_frame_ = true;// whether the first lidar frame is processed, used for initialization
+  bool   imu_need_init_ = true;// whether the IMU needs to be initialized, used for initialization
 };
 
 ImuProcess::ImuProcess()
@@ -99,9 +99,9 @@ ImuProcess::ImuProcess()
   cov_bias_acc  = V3D(0.0001, 0.0001, 0.0001);
   mean_acc      = V3D(0, 0, -1.0);
   mean_gyr      = V3D(0, 0, 0);
-  angvel_last     = Zero3d;
+  angvel_last     = Zero3d;//the last angular velocity
   Lidar_T_wrt_IMU = Zero3d;
-  Lidar_R_wrt_IMU = Eye3d;
+  Lidar_R_wrt_IMU = Eye3d;//the rotation from lidar frame to IMU frame, default to identity
   last_imu_.reset(new sensor_msgs::Imu());
 }
 
@@ -190,7 +190,10 @@ void ImuProcess::IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 
     const auto &gyr_acc = imu->angular_velocity;
     cur_acc << imu_acc.x, imu_acc.y, imu_acc.z;
     cur_gyr << gyr_acc.x, gyr_acc.y, gyr_acc.z;
-
+    /**iteratively calculate the mean and covariance of the acceleration and gyro measurements
+     * it's the incremental average method, which is more efficient and numerically stable than the direct average method,
+     * especially when the number of measurements is large and need high real-time performance. 
+     * **/
     mean_acc      += (cur_acc - mean_acc) / N;
     mean_gyr      += (cur_gyr - mean_gyr) / N;
 
