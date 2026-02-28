@@ -40,19 +40,15 @@ void Preprocess::set(bool feat_en, int lid_type, double bld, int pfilt_num)
   blind = bld;                  // 最小距离阈值，即过滤掉0～blind范围内的点云
   point_filter_num = pfilt_num; // 采样间隔，即每隔point_filter_num个点取1个点
 }
-/**
- * @brief Livox激光雷达点云预处理函数
- *
- * @param msg livox激光雷达点云数据，格式为livox_ros_driver::CustomMsg
- * @param pcl_out 输出处理后的点云数据，格式为pcl::PointCloud<pcl::PointXYZINormal>
- */
-void Preprocess::process(const livox_ros_driver2::CustomMsg::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
-{
+
+
+void Preprocess::process(const LivoxCustomMsgConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
+{  
   avia_handler(msg);
   *pcl_out = pl_surf;
 }
 
-void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
+void Preprocess::process(const Pcl2MsgConstPtr &msg, PointCloudXYZI::Ptr &pcl_out)
 {
   switch (time_unit)
   {
@@ -83,6 +79,10 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
     velodyne_handler(msg);
     break;
 
+  case AIRY:
+    airy_handler(msg);
+    break; 
+
   case MARSIM:
     sim_handler(msg);
     break;
@@ -93,11 +93,10 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   }
   *pcl_out = pl_surf;
 }
-/*
-预处理发出的点云数据
-Livox激光雷达点云数据进行预处理。这里的操作是拿到livox原始数据，然后通过线束和反射率重新拼接了
-*/
-void Preprocess::avia_handler(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
+
+
+void Preprocess::avia_handler(const LivoxCustomMsgConstPtr &msg)
+
 {
   pl_surf.clear(); // 清除之前的平面点云缓存
   pl_corn.clear(); // 清除之前的角点云缓存
@@ -201,7 +200,7 @@ void Preprocess::avia_handler(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
   }
 }
 
-void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+void Preprocess::oust64_handler(const Pcl2MsgConstPtr &msg)
 {
   pl_surf.clear();
   pl_corn.clear();
@@ -268,7 +267,11 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   }
   else
   {
+    #ifdef USE_ROS1
     double time_stamp = msg->header.stamp.toSec();
+    #elif defined(USE_ROS2)
+    double time_stamp = rclcpp::Time(msg->header.stamp).seconds();
+    #endif
     // cout << "===================================" << endl;
     // printf("Pt size = %d, N_SCANS = %d\r\n", plsize, N_SCANS);
     for (int i = 0; i < pl_orig.points.size(); i++)
@@ -299,7 +302,7 @@ void Preprocess::oust64_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   // pub_func(pl_surf, pub_corn, msg->header.stamp);
 }
 
-void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+void Preprocess::velodyne_handler(const Pcl2MsgConstPtr &msg)
 {
   pl_surf.clear();
   pl_corn.clear();
@@ -478,32 +481,126 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   }
 }
 
-void Preprocess::sim_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
-{
+void Preprocess::airy_handler(const Pcl2MsgConstPtr& msg) {
   pl_surf.clear();
+  pl_corn.clear();
   pl_full.clear();
-  pcl::PointCloud<pcl::PointXYZI> pl_orig;
+  pcl::PointCloud<robosense_ros::Point> pl_orig;
   pcl::fromROSMsg(*msg, pl_orig);
   int plsize = pl_orig.size();
+  pl_corn.reserve(plsize);
   pl_surf.reserve(plsize);
-  for (int i = 0; i < pl_orig.points.size(); i++)
+  #ifdef USE_ROS1
+  double time_stamp = msg->header.stamp.toSec();
+  #elif defined(USE_ROS2)
+  double time_stamp = rclcpp::Time(msg->header.stamp).seconds();
+  #endif
+
+
+  if (feature_enabled)
   {
-    double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y +
-                   pl_orig.points[i].z * pl_orig.points[i].z;
-    if (range < blind * blind)
-      continue;
-    Eigen::Vector3d pt_vec;
-    PointType added_pt;
-    added_pt.x = pl_orig.points[i].x;
-    added_pt.y = pl_orig.points[i].y;
-    added_pt.z = pl_orig.points[i].z;
-    added_pt.intensity = pl_orig.points[i].intensity;
-    added_pt.normal_x = 0;
-    added_pt.normal_y = 0;
-    added_pt.normal_z = 0;
-    added_pt.curvature = 0.0;
-    pl_surf.points.push_back(added_pt);
+    for (int i = 0; i < N_SCANS; i++)
+    {
+      pl_buff[i].clear();
+      pl_buff[i].reserve(plsize);
+    }
+
+    for (uint i = 0; i < plsize; i++)
+    {
+      double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
+      if (range < (blind * blind)) continue; 
+      Eigen::Vector3d pt_vec;
+      PointType added_pt;
+      added_pt.x = pl_orig.points[i].x;
+      added_pt.y = pl_orig.points[i].y;
+      added_pt.z = pl_orig.points[i].z;
+      added_pt.intensity = pl_orig.points[i].intensity;
+      added_pt.normal_x = 0;
+      added_pt.normal_y = 0;
+      added_pt.normal_z = 0;
+
+      added_pt.curvature = (pl_orig.points[i].timestamp - time_stamp) * time_unit_scale;
+      if(pl_orig.points[i].ring < N_SCANS)
+      {
+        pl_buff[pl_orig.points[i].ring].push_back(added_pt);
+      }
+    }
+
+    for (int j = 0; j < N_SCANS; j++)
+    {
+      PointCloudXYZI &pl = pl_buff[j];
+      int linesize = pl.size();
+      vector<orgtype> &types = typess[j];
+      types.clear();
+      types.resize(linesize);
+      linesize--;
+      for (uint i = 0; i < linesize; i++)
+      {
+        types[i].range = sqrt(pl[i].x * pl[i].x + pl[i].y * pl[i].y);
+        vx = pl[i].x - pl[i + 1].x;
+        vy = pl[i].y - pl[i + 1].y;
+        vz = pl[i].z - pl[i + 1].z;
+        types[i].dista = vx * vx + vy * vy + vz * vz;
+      }
+      types[linesize].range = sqrt(pl[linesize].x * pl[linesize].x + pl[linesize].y * pl[linesize].y);
+      give_feature(pl, types);
+    }
   }
+  else
+  {
+    // cout << "===================================" << endl;
+    // printf("Pt size = %d, N_SCANS = %d\r\n", plsize, N_SCANS);
+
+    for (int i = 0; i < pl_orig.points.size(); i++)
+    {
+      if (i % point_filter_num != 0) continue;
+
+      double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
+      
+      if (range < (blind * blind)) continue;
+      
+      Eigen::Vector3d pt_vec;
+      PointType added_pt;
+      added_pt.x = pl_orig.points[i].x;
+      added_pt.y = pl_orig.points[i].y;
+      added_pt.z = pl_orig.points[i].z;
+      added_pt.intensity = pl_orig.points[i].intensity;
+      added_pt.normal_x = 0;
+      added_pt.normal_y = 0;
+      added_pt.normal_z = 0;
+      added_pt.curvature = (pl_orig.points[i].timestamp - time_stamp) * time_unit_scale;
+
+
+      pl_surf.points.push_back(added_pt);
+    }
+  }
+  pub_func(pub_surf, pl_surf, msg->header.stamp);
+  // pub_func(pub_corn, pl_corn, msg->header.stamp);
+}
+
+void Preprocess::sim_handler(const Pcl2MsgConstPtr &msg) {
+    pl_surf.clear();
+    pl_full.clear();
+    pcl::PointCloud<pcl::PointXYZI> pl_orig;
+    pcl::fromROSMsg(*msg, pl_orig);
+    int plsize = pl_orig.size();
+    pl_surf.reserve(plsize);
+    for (int i = 0; i < pl_orig.points.size(); i++) {
+        double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y +
+                       pl_orig.points[i].z * pl_orig.points[i].z;
+        if (range < blind * blind) continue;
+        Eigen::Vector3d pt_vec;
+        PointType added_pt;
+        added_pt.x = pl_orig.points[i].x;
+        added_pt.y = pl_orig.points[i].y;
+        added_pt.z = pl_orig.points[i].z;
+        added_pt.intensity = pl_orig.points[i].intensity;
+        added_pt.normal_x = 0;
+        added_pt.normal_y = 0;
+        added_pt.normal_z = 0;
+        added_pt.curvature = 0.0;
+        pl_surf.points.push_back(added_pt);
+    }
 }
 
 void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &types)
@@ -794,14 +891,19 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   }
 }
 
-void Preprocess::pub_func(PointCloudXYZI &pl, const ros::Time &ct)
+void Preprocess::pub_func(const Pcl2Publisher& pub, PointCloudXYZI &pl, const TimeType &ct)
 {
-  pl.height = 1;
-  pl.width = pl.size();
-  sensor_msgs::PointCloud2 output;
+  pl.height = 1; pl.width = pl.size();
+  PointCloud2Msg output;
+
   pcl::toROSMsg(pl, output);
-  output.header.frame_id = "livox";
+  output.header.frame_id = "lidar";
   output.header.stamp = ct;
+  #ifdef USE_ROS1 
+  pub.publish(output);
+  #elif defined(USE_ROS2)
+  pub->publish(output);
+  #endif
 }
 
 int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i_cur, uint &i_nex, Eigen::Vector3d &curr_direct)
